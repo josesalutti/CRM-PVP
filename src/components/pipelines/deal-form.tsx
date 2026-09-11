@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import { CURRENCIES } from "@/lib/currency";
+import { CURRENCIES, normalizeCurrencyCode } from "@/lib/currency";
 import type {
   Contact,
   Conversation,
@@ -156,12 +156,22 @@ export function DealForm({
       toast.error(t("toastRequired"));
       return;
     }
+    // ISO-4217 or nothing. The select can only produce supported
+    // codes, but a deal being edited may carry a legacy/garbage value
+    // ("Kz", "United States") from before migration 040, and re-saving
+    // it would now violate the deals_currency_format CHECK.
+    const currencyCode = normalizeCurrencyCode(currency);
+    if (!currencyCode) {
+      toast.error(t("toastInvalidCurrency"));
+      return;
+    }
+
     setSaving(true);
 
     const payload = {
       title: title.trim(),
       value: parseFloat(value) || 0,
-      currency,
+      currency: currencyCode,
       contact_id: contactId,
       pipeline_id: pipelineId,
       stage_id: stageId,
@@ -317,7 +327,7 @@ export function DealForm({
                   className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary"
                 >
                   {CURRENCIES.map((c) => (
-                    <option key={c.code} value={c.code}>
+                    <option key={c.code} value={c.code} title={c.label}>
                       {c.code}
                     </option>
                   ))}

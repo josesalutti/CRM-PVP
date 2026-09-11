@@ -7,6 +7,8 @@ import { useAuth } from "@/hooks/use-auth";
 import type { Notification } from "@/types";
 import { Bell, CheckCheck, Loader2, UserPlus } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { pt } from "date-fns/locale";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -19,6 +21,7 @@ const TYPE_ICON: Record<Notification["type"], typeof Bell> = {
 
 export default function NotificationsPage() {
   const router = useRouter();
+  const t = useTranslations("NotificationsPage");
   const { accountId } = useAuth();
   const [notifications, setNotifications] = useState<Notification[] | null>(
     null,
@@ -104,11 +107,11 @@ export default function NotificationsPage() {
         .eq("id", id)
         .is("read_at", null);
       if (updateErr) {
-        toast.error("Failed to mark notification as read");
+        toast.error(t("errorMarkRead"));
         load();
       }
     },
-    [load],
+    [load, t],
   );
 
   const handleClick = useCallback(
@@ -137,17 +140,17 @@ export default function NotificationsPage() {
       .is("read_at", null);
     setMarkingAll(false);
     if (updateErr) {
-      toast.error("Failed to mark all as read");
+      toast.error(t("errorMarkAll"));
       load();
     }
-  }, [unreadIds.length, load]);
+  }, [unreadIds.length, load, t]);
 
   if (error) {
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-2">
         <p className="text-sm text-destructive">{error}</p>
         <Button variant="outline" onClick={() => window.location.reload()}>
-          Retry
+          {t("retry")}
         </Button>
       </div>
     );
@@ -165,9 +168,9 @@ export default function NotificationsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Notifications</h1>
+          <h1 className="text-2xl font-bold text-foreground">{t("title")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Conversations other teammates assign to you show up here.
+            {t("description")}
           </p>
         </div>
         <Button
@@ -181,7 +184,7 @@ export default function NotificationsPage() {
           ) : (
             <CheckCheck className="h-4 w-4" />
           )}
-          Mark all as read
+          {t("markAllRead")}
         </Button>
       </div>
 
@@ -191,11 +194,10 @@ export default function NotificationsPage() {
             <Bell className="h-6 w-6 text-primary" />
           </div>
           <p className="mt-3 text-sm font-medium text-foreground">
-            No notifications yet
+            {t("emptyTitle")}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            You&apos;ll see an alert here when someone assigns you a
-            conversation.
+            {t("emptyDesc")}
           </p>
         </div>
       ) : (
@@ -241,7 +243,7 @@ export default function NotificationsPage() {
                       </span>
                       {isUnread && (
                         <span
-                          aria-label="Unread"
+                          aria-label={t("unread")}
                           className="h-2 w-2 flex-shrink-0 rounded-full bg-primary"
                         />
                       )}
@@ -254,6 +256,7 @@ export default function NotificationsPage() {
                     <p className="mt-1 text-[11px] text-muted-foreground/70">
                       {formatDistanceToNow(new Date(n.created_at), {
                         addSuffix: true,
+                        locale: pt,
                       })}
                     </p>
                   </div>

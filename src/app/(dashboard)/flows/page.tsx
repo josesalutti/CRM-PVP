@@ -82,6 +82,22 @@ const TEMPLATE_ICONS = {
   UserPlus,
 } as const;
 
+/**
+ * Template name / description in the reader's language. The API serves
+ * the built-in templates' English copy from `lib/flows/templates`; the
+ * catalogue carries a translation per slug. A slug the catalogue does
+ * not know falls back to whatever the server sent.
+ */
+function templateCopy(
+  t: ReturnType<typeof useTranslations>,
+  slug: string,
+  field: "name" | "description",
+  fallback: string,
+): string {
+  const key = `templates.${slug}.${field}`;
+  return t.has(key) ? t(key) : fallback;
+}
+
 export default function FlowsPage() {
   const router = useRouter();
   const canCreate = useCan("send-messages");
@@ -274,10 +290,15 @@ export default function FlowsPage() {
                     >
                       <Icon className="h-5 w-5 text-primary" />
                       <span className="text-sm font-semibold text-popover-foreground">
-                        {template.name}
+                        {templateCopy(t, template.slug, "name", template.name)}
                       </span>
                       <span className="text-xs leading-relaxed text-muted-foreground">
-                        {template.description}
+                        {templateCopy(
+                          t,
+                          template.slug,
+                          "description",
+                          template.description,
+                        )}
                       </span>
                       <span className="mt-auto border-t border-border pt-2 text-[11px] text-muted-foreground">
                         {t("nodeCount", { count: template.node_count })}

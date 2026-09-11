@@ -6,7 +6,7 @@ import { Coins, Loader2 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import { CURRENCIES } from "@/lib/currency";
+import { CURRENCIES, normalizeCurrencyCode } from "@/lib/currency";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -52,10 +52,19 @@ export function DealsSettings() {
 
   async function handleSave() {
     if (!accountId || !dirty) return;
+    // Guard the write: `accounts.default_currency` carries a
+    // '^[A-Z]{3}$' CHECK (migration 021), and a symbol like "Kz" is
+    // never an identifier. Reject here so the user sees a message
+    // rather than a raw Postgres constraint error.
+    const currencyCode = normalizeCurrencyCode(selected);
+    if (!currencyCode) {
+      toast.error(t("invalidCurrency"));
+      return;
+    }
     setSaving(true);
     const { error } = await supabase
       .from("accounts")
-      .update({ default_currency: selected })
+      .update({ default_currency: currencyCode })
       .eq("id", accountId);
     if (error) {
       toast.error(t("saveFailed"));

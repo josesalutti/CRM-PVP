@@ -18,7 +18,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
-import { formatCurrency } from "@/lib/currency";
+import { formatCurrency, primaryTotal, sumByCurrency } from "@/lib/currency";
 import { useTranslations } from "next-intl";
 
 interface PipelineAnalyticsProps {
@@ -59,16 +59,44 @@ export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
     const openDeals = active.filter((d) => d.status !== "won");
 
     const totalCount = active.length;
-    const totalValue = active.reduce((sum, d) => sum + Number(d.value || 0), 0);
-    const avgValue = totalCount > 0 ? totalValue / totalCount : 0;
+
+    // Every money figure here is per-currency. Summing across
+    // currencies, or averaging over a mixed-currency count, would be
+    // arithmetic on incomparable units — this app does no FX
+    // conversion. Each aggregate keeps its currencies apart, and the
+    // cards lead with the account default.
+    const totalsByCurrency = sumByCurrency(
+      active,
+      (d) => d.value,
+      (d) => d.currency,
+      defaultCurrency,
+    );
+    // Average deal size divides each currency's total by the number of
+    // deals IN THAT CURRENCY, not by the mixed-currency count.
+    const countsByCurrency = sumByCurrency(
+      active,
+      () => 1,
+      (d) => d.currency,
+      defaultCurrency,
+    );
+    const avgByCurrency = totalsByCurrency.map((t) => ({
+      currency: t.currency,
+      total:
+        t.total /
+        (countsByCurrency.find((c) => c.currency === t.currency)?.total || 1),
+    }));
 
     const stageById = new Map(sortedStages.map((s) => [s.id, s]));
-    const weightedValue = openDeals.reduce((sum, d) => {
-      const stage = stageById.get(d.stage_id);
-      if (!stage) return sum;
-      const prob = computeStageProbability(stage, sortedStages);
-      return sum + Number(d.value || 0) * prob;
-    }, 0);
+    const weightedByCurrency = sumByCurrency(
+      openDeals,
+      (d) => {
+        const stage = stageById.get(d.stage_id);
+        if (!stage) return 0;
+        return Number(d.value || 0) * computeStageProbability(stage, sortedStages);
+      },
+      (d) => d.currency,
+      defaultCurrency,
+    );
 
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -85,13 +113,26 @@ export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
 
     return {
       totalCount,
-      totalValue,
-      avgValue,
-      weightedValue,
+      totalsByCurrency,
+      avgByCurrency,
+      weightedByCurrency,
       wonThisMonth,
       lostThisMonth,
     };
-  }, [deals, sortedStages]);
+  }, [deals, sortedStages, defaultCurrency]);
+
+  /**
+   * Render one money metric: the account-default subtotal as the
+   * headline, every other currency listed after it so nothing is
+   * silently dropped from the figure.
+   */
+  const money = (totals: { currency: string; total: number }[]) => {
+    const { total, others } = primaryTotal(totals, defaultCurrency);
+    return [
+      formatCurrency(total, defaultCurrency),
+      ...others.map((o) => formatCurrency(o.total, o.currency)),
+    ].join(" · ");
+  };
 
   return (
     <TooltipProvider>
@@ -106,21 +147,21 @@ export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
         <Metric
           icon={<DollarSign className="h-4 w-4 text-primary" />}
           label={t("pipelineValue")}
-          value={formatCurrency(stats.totalValue, defaultCurrency)}
+          value={money(stats.totalsByCurrency)}
           tooltip={t("pipelineValueTooltip")}
           t={t}
         />
         <Metric
           icon={<Target className="h-4 w-4 text-blue-400" />}
           label={t("avgDealSize")}
-          value={formatCurrency(stats.avgValue, defaultCurrency)}
+          value={money(stats.avgByCurrency)}
           tooltip={t("avgDealSizeTooltip")}
           t={t}
         />
         <Metric
           icon={<TrendingUp className="h-4 w-4 text-purple-400" />}
           label={t("weightedValue")}
-          value={formatCurrency(stats.weightedValue, defaultCurrency)}
+          value={money(stats.weightedByCurrency)}
           tooltip={t("weightedValueTooltip")}
           t={t}
         />

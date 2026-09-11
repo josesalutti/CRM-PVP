@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { DEFAULT_CURRENCY, sumByCurrency } from '@/lib/currency'
 import {
   daysAgoStart,
   DOW_SHORT_MON_FIRST,
@@ -29,7 +30,15 @@ type DB = SupabaseClient
 
 // --- 1. Metric cards ---------------------------------------------------
 
-export async function loadMetrics(db: DB): Promise<MetricsBundle> {
+/**
+ * `currency` is the account's display currency: it decides which
+ * subtotal the deal-value card leads with. It never filters or
+ * converts — every open deal is counted, under its own currency.
+ */
+export async function loadMetrics(
+  db: DB,
+  currency: string = DEFAULT_CURRENCY,
+): Promise<MetricsBundle> {
   const todayStart = startOfLocalDay().toISOString()
   const yesterdayStart = daysAgoStart(1).toISOString()
 
@@ -61,7 +70,7 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       .select('id', { count: 'exact', head: true })
       .gte('created_at', yesterdayStart)
       .lt('created_at', todayStart),
-    db.from('deals').select('value, status').eq('status', 'open'),
+    db.from('deals').select('value, currency, status').eq('status', 'open'),
     db
       .from('messages')
       .select('id', { count: 'exact', head: true })
@@ -75,8 +84,19 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       .lt('created_at', todayStart),
   ])
 
-  const openDealsRows = (openDeals.data ?? []) as { value: number | null }[]
-  const openDealsValue = openDealsRows.reduce((sum, d) => sum + (d.value ?? 0), 0)
+  const openDealsRows = (openDeals.data ?? []) as {
+    value: number | null
+    currency: string | null
+  }[]
+  // One subtotal per currency. Summing across currencies would be a
+  // meaningless number — this app does no FX conversion — so the card
+  // shows the account default and discloses the rest.
+  const openDealsTotals = sumByCurrency(
+    openDealsRows,
+    (d) => d.value,
+    (d) => d.currency,
+    currency,
+  )
 
   return {
     activeConversations: {
@@ -90,7 +110,7 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       current: newContactsToday.count ?? 0,
       previous: newContactsYesterday.count ?? 0,
     },
-    openDealsValue,
+    openDealsTotals,
     openDealsCount: openDealsRows.length,
     messagesSentToday: {
       current: messagesToday.count ?? 0,
@@ -130,15 +150,39 @@ export async function loadConversationsSeries(
 
 // --- 3. Pipeline donut -------------------------------------------------
 
-export async function loadPipelineDonut(db: DB): Promise<PipelineDonutData> {
+export async function loadPipelineDonut(
+  db: DB,
+  currency: string = DEFAULT_CURRENCY,
+): Promise<PipelineDonutData> {
   const [stagesRes, dealsRes] = await Promise.all([
     db.from('pipeline_stages').select('id, name, color, pipeline_id, position').order('position'),
-    db.from('deals').select('stage_id, value, status').eq('status', 'open'),
+    db
+      .from('deals')
+      .select('stage_id, value, currency, status')
+      .eq('status', 'open'),
   ])
 
   const stages =
     (stagesRes.data ?? []) as { id: string; name: string; color: string }[]
-  const deals = (dealsRes.data ?? []) as { stage_id: string; value: number | null }[]
+  const allDeals = (dealsRes.data ?? []) as {
+    stage_id: string
+    value: number | null
+    currency: string | null
+  }[]
+
+  // A ring of proportional slices only means something within a single
+  // currency: 500,000 AOA is not "five times" 100,000 MZN. So the donut
+  // charts the display currency alone, and reports what it left out.
+  const display = (currency || DEFAULT_CURRENCY).trim().toUpperCase()
+  const deals = allDeals.filter(
+    (d) => ((d.currency ?? '').trim().toUpperCase() || display) === display,
+  )
+  const otherCurrencies = sumByCurrency(
+    allDeals,
+    (d) => d.value,
+    (d) => d.currency,
+    display,
+  ).filter((t) => t.currency !== display)
 
   const byStage = new Map<string, { count: number; total: number }>()
   for (const d of deals) {
@@ -163,7 +207,9 @@ export async function loadPipelineDonut(db: DB): Promise<PipelineDonutData> {
 
   return {
     stages: slices,
+    currency: display,
     totalValue: slices.reduce((sum, s) => sum + s.totalValue, 0),
+    otherCurrencies,
   }
 }
 

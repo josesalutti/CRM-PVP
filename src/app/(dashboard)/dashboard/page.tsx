@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
-import { formatCurrency } from '@/lib/currency'
+import { formatCurrency, primaryTotal } from '@/lib/currency'
 import {
   MessageSquare,
   UserPlus,
@@ -70,7 +70,7 @@ export default function DashboardPage() {
     // Kick everything off in parallel. Each block has its own
     // setState + finally so a slow query doesn't hold up faster
     // sections — each widget shows its own skeleton independently.
-    void loadMetrics(db)
+    void loadMetrics(db, defaultCurrency)
       .then((m) => setMetrics(m))
       .catch((err) => console.error('[dashboard] metrics failed:', err))
       .finally(() => setMetricsLoading(false))
@@ -80,7 +80,7 @@ export default function DashboardPage() {
       .catch((err) => console.error('[dashboard] series failed:', err))
       .finally(() => setSeriesLoading(false))
 
-    void loadPipelineDonut(db)
+    void loadPipelineDonut(db, defaultCurrency)
       .then((p) => setPipeline(p))
       .catch((err) => console.error('[dashboard] pipeline failed:', err))
       .finally(() => setPipelineLoading(false))
@@ -97,7 +97,10 @@ export default function DashboardPage() {
       .then((a) => setActivity(a))
       .catch((err) => console.error('[dashboard] activity failed:', err))
       .finally(() => setActivityLoading(false))
-  }, [])
+    // The display currency decides which subtotal the deal card leads
+    // with and which one the donut charts, so a change in Settings has
+    // to re-run these queries.
+  }, [defaultCurrency])
 
   useEffect(() => {
     loadAll()
@@ -164,12 +167,35 @@ export default function DashboardPage() {
                 ),
               }}
             />
-            <MetricCard
-              title={t('openDealsValue')}
-              value={formatCurrency(metrics.openDealsValue, defaultCurrency)}
-              icon={DollarSign}
-              subtitle={t('openDeals', { count: metrics.openDealsCount })}
-            />
+            {(() => {
+              // Deal values are never summed across currencies (no FX
+              // conversion in this app): the headline is the account's
+              // own currency, and any others are listed beside it.
+              const { total, others } = primaryTotal(
+                metrics.openDealsTotals,
+                defaultCurrency
+              )
+              const subtitle = [
+                t('openDeals', { count: metrics.openDealsCount }),
+                others.length > 0
+                  ? t('alsoInOtherCurrencies', {
+                      totals: others
+                        .map((o) => formatCurrency(o.total, o.currency))
+                        .join(' · '),
+                    })
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')
+              return (
+                <MetricCard
+                  title={t('openDealsValue')}
+                  value={formatCurrency(total, defaultCurrency)}
+                  icon={DollarSign}
+                  subtitle={subtitle}
+                />
+              )
+            })()}
             <MetricCard
               title={t('messagesSentToday')}
               value={metrics.messagesSentToday.current.toLocaleString()}

@@ -272,14 +272,26 @@ export interface MessageReaction {
   created_at: string;
 }
 
+export type WhatsAppProvider = 'meta' | 'evolution';
+
 export interface WhatsAppConfig {
   id: string;
   user_id: string;
+  /** Transport for this account (migration 041). Existing rows are 'meta'. */
+  provider: WhatsAppProvider;
+  /**
+   * Meta-only credentials. Always set when `provider === 'meta'` (a DB
+   * CHECK enforces it); null for Evolution rows.
+   */
   phone_number_id: string;
   waba_id?: string;
   access_token: string;
   verify_token?: string;
-  status: 'connected' | 'disconnected';
+  /** Evolution-only: instance that owns this account's WhatsApp session. */
+  evolution_instance_name?: string | null;
+  /** Filled once a QR pairing completes (Evolution). */
+  display_phone_number?: string | null;
+  status: 'connected' | 'disconnected' | 'connecting';
   connected_at?: string;
   /**
    * Set when POST /{phone_number_id}/register last succeeded. NULL

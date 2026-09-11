@@ -33,7 +33,15 @@ export function PipelineDonut({ data, loading, currency }: PipelineDonutProps) {
           <EmptyState
             icon={GitBranch}
             title={t('noOpenDeals')}
-            hint={t('noOpenDealsHint')}
+            hint={
+              data.otherCurrencies.length > 0
+                ? t('otherCurrencies', {
+                    totals: data.otherCurrencies
+                      .map((o) => formatCurrencyShort(o.total, o.currency))
+                      .join(' · '),
+                  })
+                : t('noOpenDealsHint')
+            }
           />
         ) : (
           <>
@@ -56,6 +64,19 @@ export function PipelineDonut({ data, loading, currency }: PipelineDonutProps) {
                 </li>
               ))}
             </ul>
+            {data.otherCurrencies.length > 0 && (
+              // The ring charts one currency only — proportional
+              // slices across currencies would be nonsense without FX
+              // conversion, which this app deliberately does not do.
+              // Say what was left out rather than under-reporting.
+              <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
+                {t('otherCurrencies', {
+                  totals: data.otherCurrencies
+                    .map((o) => formatCurrencyShort(o.total, o.currency))
+                    .join(' · '),
+                })}
+              </p>
+            )}
           </>
         )}
       </div>

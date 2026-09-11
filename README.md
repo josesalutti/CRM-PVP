@@ -93,6 +93,43 @@ Open <http://localhost:3000>. You'll be redirected to `/login` (or
 Prefer containers? See [docs/docker.md](./docs/docker.md) for the
 Dockerfile + Docker Compose setup.
 
+### Everyday scripts
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Start the dev server on <http://localhost:3000>. |
+| `npm run build` / `npm start` | Production build, then serve it. |
+| `npm run lint` | ESLint (`eslint-config-next`). |
+| `npm run typecheck` | `tsc --noEmit` — no emit, types only. |
+| `npm test` / `npm run test:watch` | Vitest suite (middleware, i18n catalogue, ICU safety). |
+| `npm run format` / `format:check` | Prettier, with the Tailwind class-sorting plugin. |
+
+Node 20+ is required (see `engines` in `package.json`).
+
+## Languages
+
+The UI ships translated catalogues in [`messages/`](./messages):
+**English (`en`)**, **Korean (`ko`)**, and **Portuguese (`pt`)**.
+
+Pick one per install with a single env var — the locale is resolved
+server-side in [`src/i18n/request.ts`](./src/i18n/request.ts) and falls
+back to English if the catalogue is missing:
+
+```bash
+NEXT_PUBLIC_APP_LOCALE=pt   # en | ko | pt
+```
+
+To add a language, copy `messages/en.json` to `messages/<locale>.json`
+and translate the values, keeping the key structure identical. Two
+tests guard the catalogues and run in CI:
+
+- `src/i18n/messages.test.ts` — every locale has the same keys as `en`,
+  so a missed translation fails the build instead of rendering a raw
+  keypath.
+- `src/i18n/icu-safety.test.ts` — strings next-intl cannot parse as ICU
+  (WhatsApp's literal `{{1}}` placeholders, raw HTML) must be read with
+  `t.raw()` / `t.rich()`, never plain `t()`.
+
 ## 🚀 Deploy on Hostinger (recommended)
 
 <p align="center">

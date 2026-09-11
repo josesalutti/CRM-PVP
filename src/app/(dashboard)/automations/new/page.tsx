@@ -2,6 +2,7 @@
 
 import { Suspense, useMemo } from "react"
 import { useSearchParams } from "next/navigation"
+import { useTranslations } from "next-intl"
 
 import {
   AutomationBuilder,
@@ -24,25 +25,39 @@ export default function NewAutomationPage() {
 
 function NewAutomationPageInner() {
   const params = useSearchParams()
+  const t = useTranslations("Automations.list")
   const template = params.get("template") as TemplateSlug | null
 
   const initial: BuilderInitial = useMemo(() => {
     if (template && AUTOMATION_TEMPLATES[template]) {
-      const t = AUTOMATION_TEMPLATES[template]
+      const def = AUTOMATION_TEMPLATES[template]
+      // The seed's structure (step types, branches, wait amounts) is
+      // locale-independent and stays in the lib; the copy the user will
+      // read and send — name, description, message bodies, keywords —
+      // comes from the catalogue so a template opens in their language.
+      let messageSeen = 0
       const steps = expandFromSeeds(
-        t.steps.map((seed, idx) => ({
+        def.steps.map((seed, idx) => ({
           index: idx,
           step_type: seed.step_type,
-          step_config: seed.step_config as Record<string, unknown>,
+          step_config: localizeStepConfig(
+            seed.step_type,
+            seed.step_config as Record<string, unknown>,
+            () => t(`templates.${template}.step${++messageSeen}`),
+          ),
           branch: seed.branch ?? null,
           parent_index: seed.parent_index ?? null,
         })),
       )
       return {
-        name: t.name,
-        description: t.description,
-        trigger_type: t.trigger_type,
-        trigger_config: t.trigger_config as Record<string, unknown>,
+        name: t(`templates.${template}.name`),
+        description: t(`templates.${template}.description`),
+        trigger_type: def.trigger_type,
+        trigger_config: localizeTriggerConfig(
+          def.trigger_config as Record<string, unknown>,
+          template,
+          t,
+        ),
         is_active: false,
         steps,
       }
@@ -55,9 +70,33 @@ function NewAutomationPageInner() {
       is_active: false,
       steps: [],
     }
-  }, [template])
+  }, [template, t])
 
   return <AutomationBuilder initial={initial} />
+}
+
+/** Swap a send_message seed's English body for the catalogue's. */
+function localizeStepConfig(
+  stepType: AutomationStepType,
+  config: Record<string, unknown>,
+  nextText: () => string,
+): Record<string, unknown> {
+  if (stepType !== "send_message") return config
+  return { ...config, text: nextText() }
+}
+
+/** Swap keyword-trigger seeds for the catalogue's comma-separated list. */
+function localizeTriggerConfig(
+  config: Record<string, unknown>,
+  slug: TemplateSlug,
+  t: ReturnType<typeof useTranslations>,
+): Record<string, unknown> {
+  if (!Array.isArray(config.keywords)) return config
+  const keywords = t(`templates.${slug}.keywords`)
+    .split(",")
+    .map((k) => k.trim())
+    .filter(Boolean)
+  return { ...config, keywords }
 }
 
 interface SeedRow {

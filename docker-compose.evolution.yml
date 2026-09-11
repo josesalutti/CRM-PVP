@@ -1,0 +1,76 @@
+# Evolution API v2 — unofficial WhatsApp connection (QR code).
+#
+# Runs alongside wacrm on the same machine. Start it with:
+#
+#   copy .env.evolution.example .env.evolution   (then edit the values)
+#   docker compose -f docker-compose.evolution.yml up -d
+#
+# See docs/evolution-api.md for the full walkthrough.
+name: wacrm-evolution
+
+services:
+  evolution-api:
+    image: evoapicloud/evolution-api:latest
+    depends_on:
+      - evolution-postgres
+      - evolution-redis
+    env_file:
+      - .env.evolution
+    environment:
+      SERVER_TYPE: http
+      SERVER_PORT: 8080
+      DATABASE_ENABLED: 'true'
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:${EVOLUTION_DB_PASSWORD}@evolution-postgres:5432/evolution?schema=evolution_api
+      DATABASE_CONNECTION_CLIENT_NAME: wacrm_evolution
+      DATABASE_SAVE_DATA_INSTANCE: 'true'
+      DATABASE_SAVE_DATA_NEW_MESSAGE: 'false'
+      DATABASE_SAVE_MESSAGE_UPDATE: 'false'
+      DATABASE_SAVE_DATA_CONTACTS: 'false'
+      DATABASE_SAVE_DATA_CHATS: 'false'
+      CACHE_REDIS_ENABLED: 'true'
+      CACHE_REDIS_URI: redis://evolution-redis:6379/6
+      CACHE_REDIS_PREFIX_KEY: evolution
+      CACHE_REDIS_SAVE_INSTANCES: 'false'
+      CACHE_LOCAL_ENABLED: 'false'
+      # Webhooks are configured per instance by wacrm, never globally.
+      WEBHOOK_GLOBAL_ENABLED: 'false'
+      CONFIG_SESSION_PHONE_CLIENT: wacrm
+      CONFIG_SESSION_PHONE_NAME: Chrome
+      QRCODE_LIMIT: 30
+      DEL_INSTANCE: 'false'
+      LOG_LEVEL: ERROR,WARN,INFO
+    # Bound to localhost only: wacrm talks to it from this machine and
+    # nothing on the network should reach it directly.
+    ports:
+      - '127.0.0.1:8080:8080'
+    # Lets the container reach the wacrm dev server on the host
+    # (host.docker.internal is built into Docker Desktop; this line makes
+    # it work on Linux too).
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    volumes:
+      - evolution_instances:/evolution/instances
+    restart: unless-stopped
+
+  evolution-postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: ${EVOLUTION_DB_PASSWORD}
+      POSTGRES_DB: evolution
+    volumes:
+      - evolution_postgres:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  evolution-redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - evolution_redis:/data
+    restart: unless-stopped
+
+volumes:
+  evolution_instances:
+  evolution_postgres:
+  evolution_redis:

@@ -19,7 +19,8 @@ import { DealCard } from "./deal-card";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import { formatCurrency } from "@/lib/currency";
+import { formatCurrency, primaryTotal, sumByCurrency } from "@/lib/currency";
+import type { CurrencyTotal } from "@/lib/currency";
 import { useTranslations } from "next-intl";
 
 interface PipelineBoardProps {
@@ -106,16 +107,22 @@ export function PipelineBoard({
       <div className="pipeline-scroll flex snap-x snap-mandatory gap-3 overflow-x-auto pb-4 lg:snap-none">
         {sortedStages.map((stage) => {
           const stageDeals = dealsByStage.get(stage.id) ?? [];
-          const totalValue = stageDeals.reduce(
-            (s, d) => s + Number(d.value || 0),
-            0,
+          // Deals in a stage can be denominated in different
+          // currencies. Adding them would produce a number that means
+          // nothing (no FX conversion here), so each currency gets its
+          // own subtotal, account default first.
+          const totals = sumByCurrency(
+            stageDeals,
+            (d) => d.value,
+            (d) => d.currency,
+            defaultCurrency,
           );
           return (
             <StageColumn
               key={stage.id}
               stage={stage}
               deals={stageDeals}
-              totalValue={totalValue}
+              totals={totals}
               currency={defaultCurrency}
               onAddDeal={onAddDeal}
               onEditDeal={onEditDeal}
@@ -189,14 +196,15 @@ export function PipelineBoard({
 function StageColumn({
   stage,
   deals,
-  totalValue,
+  totals,
   currency,
   onAddDeal,
   onEditDeal,
 }: {
   stage: PipelineStage;
   deals: Deal[];
-  totalValue: number;
+  /** One subtotal per currency present in the stage, never summed. */
+  totals: CurrencyTotal[];
   currency: string;
   onAddDeal: (stageId: string) => void;
   onEditDeal: (deal: Deal) => void;
@@ -226,7 +234,13 @@ function StageColumn({
         </span>
       </div>
       <p className="text-xs text-muted-foreground">
-        {formatCurrency(totalValue, currency)}
+        {(() => {
+          const { total, others } = primaryTotal(totals, currency);
+          return [
+            formatCurrency(total, currency),
+            ...others.map((o) => formatCurrency(o.total, o.currency)),
+          ].join(" · ");
+        })()}
       </p>
 
       <div

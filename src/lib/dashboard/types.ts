@@ -7,10 +7,17 @@ export interface MetricDelta {
   previous: number
 }
 
+import type { CurrencyTotal } from '@/lib/currency'
+
 export interface MetricsBundle {
   activeConversations: MetricDelta
   newContactsToday: MetricDelta
-  openDealsValue: number
+  /**
+   * Open-deal value split by ISO-4217 currency, account default
+   * first. Never collapse this to one number: the app does no FX
+   * conversion, so a cross-currency sum would be meaningless.
+   */
+  openDealsTotals: CurrencyTotal[]
   openDealsCount: number
   messagesSentToday: MetricDelta
 }
@@ -31,7 +38,17 @@ export interface PipelineStageSlice {
 
 export interface PipelineDonutData {
   stages: PipelineStageSlice[]
+  /** ISO-4217 currency the slices and totalValue are denominated in. */
+  currency: string
+  /** Sum of the slices — all in `currency`, never mixed. */
   totalValue: number
+  /**
+   * Open-deal subtotals in every OTHER currency, which the ring
+   * deliberately excludes (proportional slices only mean something
+   * within one currency). Surfaced so the chart can say so instead of
+   * silently under-reporting.
+   */
+  otherCurrencies: CurrencyTotal[]
 }
 
 export interface ResponseTimeBucket {
