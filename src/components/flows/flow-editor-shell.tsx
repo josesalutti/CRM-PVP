@@ -98,12 +98,10 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
       <div className="flex h-full min-h-0 flex-col">
         <EditorHeader />
 
-        {/* ---- mode row: view toggle + node-type legend ----
-            Omitted entirely on mobile (canvas is unavailable there and
-            the legend is lg-only), so there's no empty band above the
-            stage on small screens. */}
+        {/* ---- mode row: view toggle ----
+            Omitted on mobile where only list view is available. */}
         {!isMobile && (
-          <div className="flex items-center gap-4 px-6 py-3.5">
+          <div className="flex items-center justify-between px-6 py-2.5">
             <div
               role="group"
               aria-label="Editor view"
@@ -121,20 +119,6 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
                 icon={<List className="h-3.5 w-3.5" />}
                 label={t("listView")}
               />
-            </div>
-            <div className="ml-auto hidden flex-wrap items-center gap-x-3.5 gap-y-1.5 lg:flex">
-              {LEGEND_TYPES.map((t_type) => (
-                <span
-                  key={t_type}
-                  className="inline-flex items-center gap-1.5 text-[11.5px] text-muted-foreground"
-                >
-                  <span
-                    className="h-2.5 w-2.5 rounded-full"
-                    style={{ background: nodeColors(t_type).solid }}
-                  />
-                  {t(`nodes.${t_type}.label`)}
-                </span>
-              ))}
             </div>
           </div>
         )}

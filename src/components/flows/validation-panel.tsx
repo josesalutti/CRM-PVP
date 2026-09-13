@@ -18,19 +18,75 @@
  */
 
 import { CircleAlert, CircleCheck } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import type { ValidationIssue } from "@/lib/flows/validate";
 import { useFlowEditor } from "./flow-editor-state";
 
+function formatValidationMessage(message: string, locale: string): string {
+  if (locale !== "pt") return message;
+
+  if (message === "Keyword triggers need at least one keyword.") {
+    return "Gatilhos por palavra-chave precisam de pelo menos uma palavra-chave.";
+  }
+  if (message === "Flow name is required.") {
+    return "O nome do fluxo é obrigatório.";
+  }
+  if (message === "Pick an entry node before activating.") {
+    return "Escolha um bloco inicial antes de ativar o fluxo.";
+  }
+  if (message === "A flow needs at least one node before activation.") {
+    return "O fluxo precisa de pelo menos um bloco antes da ativação.";
+  }
+  if (message === "Start node must point to a next node.") {
+    return "O bloco inicial deve apontar para um próximo bloco.";
+  }
+  if (message === "Send-message node needs a text body.") {
+    return "O bloco de mensagem precisa de um texto.";
+  }
+  if (message === "Send-message node must point to a next node.") {
+    return "O bloco de mensagem deve apontar para um próximo bloco.";
+  }
+  if (message === "Send-buttons node needs a text body.") {
+    return "O bloco de botões precisa de um texto.";
+  }
+  if (message === "Send-buttons needs at least one button.") {
+    return "O bloco de botões precisa de pelo menos um botão.";
+  }
+  if (message === "Send-media node needs a file (upload one before activating).") {
+    return "O bloco de mídia precisa de um ficheiro (carregue um antes de ativar).";
+  }
+
+  // Dynamic regex replacements
+  const buttonNextMatch = message.match(/^Button (\d+) needs a next node\.$/);
+  if (buttonNextMatch) {
+    return `O Botão ${buttonNextMatch[1]} precisa estar conectado a um próximo bloco.`;
+  }
+
+  const buttonTitleMatch = message.match(/^Button (\d+) needs a title\.$/);
+  if (buttonTitleMatch) {
+    return `O Botão ${buttonTitleMatch[1]} precisa de um título.`;
+  }
+
+  const buttonReplyIdMatch = message.match(/^Button (\d+) needs a reply id\.$/);
+  if (buttonReplyIdMatch) {
+    return `O Botão ${buttonReplyIdMatch[1]} precisa de um ID de resposta.`;
+  }
+
+  const unreachableMatch = message.match(/^Node "([^"]+)" is unreachable from the entry node\.$/);
+  if (unreachableMatch) {
+    return `O bloco "${unreachableMatch[1]}" não é alcançado a partir do bloco inicial.`;
+  }
+
+  return message;
+}
+
 export function ValidationPanel() {
   const { issues, requestFlash } = useFlowEditor();
   const t = useTranslations("Flows.validation");
+  const locale = useLocale();
 
   if (issues.length === 0) {
-    // Slate-950 base + emerald accents so the panel stays readable when
-    // sticky-positioned over scrolled-behind node cards (a translucent
-    // bg-emerald-500/10 would bleed through ugly).
     return (
       <div className="flex items-center gap-2 rounded-lg border border-emerald-600/50 bg-background p-3 text-sm font-medium text-emerald-300">
         <CircleCheck className="h-4 w-4 shrink-0" />
@@ -57,7 +113,7 @@ export function ValidationPanel() {
       </div>
       <div className="flex flex-col gap-1">
         {issues.map((i, ix) => (
-          <IssueLine key={ix} issue={i} onJump={requestFlash} t={t} />
+          <IssueLine key={ix} issue={i} onJump={requestFlash} t={t} locale={locale} />
         ))}
       </div>
     </div>
@@ -74,15 +130,18 @@ export function IssueLine({
   issue,
   onJump,
   t,
+  locale = "en",
 }: {
   issue: ValidationIssue;
   onJump?: (key: string) => void;
   t?: ReturnType<typeof useTranslations>;
+  locale?: string;
 }) {
   const tone =
     issue.severity === "error" ? "text-red-300" : "text-amber-300";
   const iconTone =
     issue.severity === "error" ? "text-red-400" : "text-amber-400";
+  const displayMessage = formatValidationMessage(issue.message, locale);
   const body = (
     <>
       <CircleAlert className={cn("mt-0.5 h-3 w-3 shrink-0", iconTone)} />
@@ -92,7 +151,7 @@ export function IssueLine({
             {issue.node_key}
           </code>
         )}
-        {issue.message}
+        {displayMessage}
       </span>
     </>
   );
