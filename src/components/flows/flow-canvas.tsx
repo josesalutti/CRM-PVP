@@ -57,7 +57,7 @@ import {
   type OnNodeDrag,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Plus, Trash2 } from 'lucide-react';
+import { Layers, PanelLeftClose, PanelLeftOpen, Plus, Search, Trash2 } from 'lucide-react';
 
 import { useTranslations } from 'next-intl';
 
@@ -278,6 +278,7 @@ function FlowCanvasInner() {
   const {
     state,
     setState,
+    addNode,
     updateNodeConfig,
     updateNodePosition,
     updateNodePositions,
@@ -510,14 +511,51 @@ function FlowCanvasInner() {
     setState((s) => ({ ...s, entry_node_id: selectedNodeKey }));
   }, [selectedNodeKey, setState]);
 
-  if (rfNodes.length === 0) {
-    return (
-      <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 text-sm">
-        <p>{t('noNodesYet')}</p>
-        <CanvasAddNodeButton t={t} />
-      </div>
-    );
-  }
+  const handleAddNode = useCallback(
+    (type: NodeType, dropPosition?: { x: number; y: number }) => {
+      const key = addNode(type);
+      if (dropPosition) {
+        updateNodePosition(
+          key,
+          dropPosition.x - NODE_WIDTH / 2,
+          dropPosition.y - NODE_HEIGHT / 2
+        );
+      } else {
+        const root = document.querySelector('.react-flow') as HTMLElement | null;
+        if (!root) return;
+        const rect = root.getBoundingClientRect();
+        const center = reactFlow.screenToFlowPosition({
+          x: rect.left + rect.width / 2 + 100,
+          y: rect.top + rect.height / 2,
+        });
+        updateNodePosition(
+          key,
+          center.x - NODE_WIDTH / 2,
+          center.y - NODE_HEIGHT / 2
+        );
+      }
+    },
+    [addNode, reactFlow, updateNodePosition]
+  );
+
+  const handleDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  const handleDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+      const type = event.dataTransfer.getData('application/reactflow') as NodeType;
+      if (!type) return;
+      const position = reactFlow.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+      handleAddNode(type, position);
+    },
+    [handleAddNode, reactFlow]
+  );
 
   return (
     <>
@@ -535,15 +573,12 @@ function FlowCanvasInner() {
           onConnect={handleConnect}
           onNodesDelete={handleNodesDelete}
           onEdgesDelete={handleEdgesDelete}
-          // Default is "Backspace" only — accept both so Mac users
-          // hitting Delete (Fn+Backspace) get the same behavior.
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
           deleteKeyCode={['Backspace', 'Delete']}
           nodesConnectable={true}
           edgesFocusable={true}
           elementsSelectable={true}
-          // Lower default min/max zoom than the lib's defaults; the
-          // tiles already truncate their summary at a reasonable
-          // size, so we don't need to zoom past 1.5x.
           minZoom={0.2}
           maxZoom={1.5}
         >
@@ -569,8 +604,9 @@ function FlowCanvasInner() {
             maskColor="color-mix(in oklch, var(--background) 70%, transparent)"
             className="!border-border !bg-card !rounded-xl !border !shadow-[0_6px_20px_-8px_rgba(0,0,0,0.5)]"
           />
-          <Panel position="top-left" className="!top-4 !left-4">
-            <CanvasAddNodeButton t={t} />
+          {/* Lateral Toolbox docked on top-left of canvas */}
+          <Panel position="top-left" className="!top-3 !left-3 z-10">
+            <LateralToolbox onAddNode={(type) => handleAddNode(type)} t={t} />
           </Panel>
         </ReactFlow>
       </div>
@@ -614,8 +650,6 @@ function NodeEditSheet({
   onSetEntry: () => void;
   t: ReturnType<typeof useTranslations>;
 }) {
-  // Sheet is controlled — opens when a node is selected, closes via
-  // Esc / overlay / close button (all delegated to onClose).
   const open = node !== null;
   if (!node) {
     return (
@@ -685,17 +719,15 @@ function NodeEditSheet({
 }
 
 // ============================================================
-// Floating add-node button — bottom-right of the canvas. Mirrors
-// the list view's AddNodeButton (same dropdown menu, same NodeType
-// list, same icons via NODE_META) but drops the new node into the
-// center of the visible viewport rather than appending to a list.
+// Lateral Toolbox — docked on the left of the canvas (Leona style).
+// Users can click or drag blocks straight onto the canvas.
 // ============================================================
 
 const ADD_NODE_TYPES: NodeType[] = [
   'start',
+  'send_message',
   'send_buttons',
   'send_list',
-  'send_message',
   'send_media',
   'collect_input',
   'condition',
@@ -704,87 +736,116 @@ const ADD_NODE_TYPES: NodeType[] = [
   'end',
 ];
 
-function CanvasAddNodeButton({ t }: { t: ReturnType<typeof useTranslations> }) {
-  const reactFlow = useReactFlow();
-  const { addNode, updateNodePosition } = useFlowEditor();
+function LateralToolbox({
+  onAddNode,
+  t,
+}: {
+  onAddNode: (type: NodeType) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const [isOpen, setIsOpen] = useState(true);
+  const [search, setSearch] = useState('');
 
-  const handleAdd = (type: NodeType) => {
-    const key = addNode(type);
-    // Place the new node at the visible canvas center. The Panel's
-    // own DOM lives inside ReactFlow so we can climb up to find the
-    // .react-flow root and read its bounding rect. If we can't find
-    // it (test envs, etc.), addNode's default (0, 0) is the fallback
-    // and the user can drag the node into view.
-    const root = document.querySelector('.react-flow') as HTMLElement | null;
-    if (!root) return;
-    const rect = root.getBoundingClientRect();
-    const center = reactFlow.screenToFlowPosition({
-      x: rect.left + rect.width / 2,
-      y: rect.top + rect.height / 2,
+  const filteredTypes = useMemo(() => {
+    if (!search.trim()) return ADD_NODE_TYPES;
+    const q = search.toLowerCase();
+    return ADD_NODE_TYPES.filter((type) => {
+      const label = (t(`nodes.${type}.label`) || '').toLowerCase();
+      const blurb = (t(`nodes.${type}.blurb`) || '').toLowerCase();
+      return label.includes(q) || blurb.includes(q) || type.includes(q);
     });
-    // NODE_WIDTH / NODE_HEIGHT are the dagre layout defaults; offset
-    // so the card sits visually centered rather than top-left at the
-    // viewport center.
-    updateNodePosition(
-      key,
-      center.x - NODE_WIDTH / 2,
-      center.y - NODE_HEIGHT / 2
-    );
+  }, [search, t]);
+
+  const onDragStart = (e: React.DragEvent, type: NodeType) => {
+    e.dataTransfer.setData('application/reactflow', type);
+    e.dataTransfer.effectAllowed = 'move';
   };
 
+  if (!isOpen) {
+    return (
+      <button
+        type="button"
+        onClick={() => setIsOpen(true)}
+        className="flex items-center gap-2 rounded-xl border border-border bg-card/90 px-3 py-2 text-xs font-semibold text-foreground shadow-lg backdrop-blur-md transition-all hover:bg-muted hover:border-primary/50"
+        title="Abrir Ferramentas"
+      >
+        <Layers className="h-4 w-4 text-primary" />
+        <span>Ferramentas</span>
+      </button>
+    );
+  }
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        className="bg-primary text-primary-foreground hover:bg-primary-hover inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-medium shadow-[0_6px_20px_-8px_rgba(0,0,0,0.5)] transition-colors"
-        aria-label={t('addNode')}
-      >
-        <Plus className="h-4 w-4" />
-        {t('addNode')}
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        className="border-border bg-popover w-[268px] p-1.5"
-      >
-        {groupNodeTypesByCategory(ADD_NODE_TYPES).map((group, i) => (
-          // DropdownMenuGroup (base-ui Menu.Group) is REQUIRED: the
-          // DropdownMenuLabel below is base-ui's Menu.GroupLabel, which
-          // throws at render without a Menu.Group ancestor. A plain <div>
-          // here crashed the page when this menu opened (issue #336).
-          <Fragment key={group.id}>
-            {i > 0 && <DropdownMenuSeparator />}
-            <DropdownMenuGroup>
-              <DropdownMenuLabel className="text-muted-foreground px-2 py-1.5 text-[11px] font-semibold tracking-wider uppercase">
-                {t(`categories.${group.id}`)}
-              </DropdownMenuLabel>
-              {group.types.map((t_type) => {
-                const meta = NODE_META[t_type];
-                return (
-                  <DropdownMenuItem
-                    key={t_type}
-                    onClick={() => handleAdd(t_type)}
-                    className="gap-3 py-2"
-                  >
-                    <NodeIconChip
-                      type={t_type}
-                      size={28}
-                      iconSize={16}
-                      className="rounded-md"
-                    />
-                    <span className="flex flex-col">
-                      <span className="text-popover-foreground text-[13px] font-semibold">
-                        {t(`nodes.${t_type}.label`)}
-                      </span>
-                      <span className="text-muted-foreground text-[11.5px]">
-                        {t(`nodes.${t_type}.blurb`)}
-                      </span>
-                    </span>
-                  </DropdownMenuItem>
-                );
-              })}
-            </DropdownMenuGroup>
-          </Fragment>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <div className="flex w-[235px] max-h-[calc(100vh-230px)] flex-col rounded-2xl border border-border/80 bg-card/95 shadow-2xl backdrop-blur-xl transition-all">
+      {/* Header with Tool tab and collapse button */}
+      <div className="flex items-center justify-between border-b border-border/70 px-3 py-2.5">
+        <div className="flex items-center gap-1.5 rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+          <Layers className="h-3.5 w-3.5 text-primary" />
+          <span>Ferramentas</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setIsOpen(false)}
+          className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          title="Recolher painel"
+        >
+          <PanelLeftClose className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Search Input */}
+      <div className="px-3 pt-2.5 pb-1.5">
+        <div className="relative flex items-center">
+          <Search className="absolute left-2.5 h-3.5 w-3.5 text-muted-foreground" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar blocos..."
+            className="w-full rounded-lg border border-border bg-muted/50 py-1.5 pl-8 pr-2.5 text-xs text-foreground placeholder:text-muted-foreground/70 outline-none transition-colors focus:border-primary focus:bg-background"
+          />
+        </div>
+      </div>
+
+      {/* Categorized / List of blocks */}
+      <div className="flex-1 overflow-y-auto px-2 pb-2.5 pt-1 space-y-1 scrollbar-thin">
+        {filteredTypes.map((type) => {
+          const c = nodeColors(type);
+          return (
+            <div
+              key={type}
+              draggable
+              onDragStart={(e) => onDragStart(e, type)}
+              onClick={() => onAddNode(type)}
+              className="group flex cursor-grab active:cursor-grabbing items-center gap-2.5 rounded-xl border border-transparent p-2 transition-all hover:border-border hover:bg-muted/80"
+              title="Clique para adicionar ou arraste para o ecrã"
+            >
+              <NodeIconChip
+                type={type}
+                size={28}
+                iconSize={15}
+                className="shrink-0 rounded-lg shadow-sm transition-transform group-hover:scale-105"
+              />
+              <div className="min-w-0 flex-1">
+                <div
+                  className="truncate text-xs font-semibold leading-tight"
+                  style={{ color: c.text }}
+                >
+                  {t(`nodes.${type}.label`)}
+                </div>
+                <div className="truncate text-[10.5px] text-muted-foreground leading-tight mt-0.5">
+                  {t(`nodes.${type}.blurb`)}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        {filteredTypes.length === 0 && (
+          <div className="py-6 text-center text-xs text-muted-foreground">
+            Nenhum bloco encontrado.
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
